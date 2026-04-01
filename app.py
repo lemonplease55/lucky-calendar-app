@@ -4,7 +4,7 @@ import datetime
 import pandas as pd
 from io import BytesIO
 import calendar
-import sqlite3  # 新增：用於資料庫
+import sqlite3
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
 # =========================
@@ -16,12 +16,10 @@ def init_db():
     """初始化資料庫"""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # 建立下載紀錄表
     c.execute('''CREATE TABLE IF NOT EXISTS downloads 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, 
                   filename TEXT)''')
-    # 建立瀏覽紀錄表 (新增)
     c.execute('''CREATE TABLE IF NOT EXISTS visits 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
@@ -66,7 +64,6 @@ init_db()
 # =========================
 st.set_page_config(page_title="樂覺製所生命靈數 | Numerology", layout="centered")
 
-# 瀏覽計數邏輯：使用 session_state 避免同一工作階段重複計算
 if 'has_visited' not in st.session_state:
     log_visit()
     st.session_state['has_visited'] = True
@@ -90,9 +87,9 @@ def format_layers(total: int) -> str:
     return f"{total}/{mid}/{reduce_to_digit(mid)}" if mid > 9 else f"{total}/{mid}"
 
 # =========================
-# 新增功能：生命靈數主命數計算
+# 生命靈數主命數計算
 # =========================
-def calculate_life_path_number(birthday: datetime.date) -> tuple[int, int, str]:
+def calculate_life_path_number(birthday: datetime.date) -> tuple:
     """
     計算生命靈數主命數
     邏輯：1999/10/26 -> 1+9+9+9+1+0+2+6 = 37 -> 3+7=10 -> 1
@@ -101,71 +98,87 @@ def calculate_life_path_number(birthday: datetime.date) -> tuple[int, int, str]:
     date_str = birthday.strftime("%Y%m%d")
     total_sum = sum(int(char) for char in date_str)
     final_num = reduce_to_digit(total_sum)
-    
+
     process_str = f"{total_sum} → {final_num}"
     if total_sum != final_num and total_sum > 9:
         second_step = sum_once(total_sum)
         if second_step > 9 and second_step != final_num:
-             process_str = f"{total_sum} → {second_step} → {final_num}"
+            process_str = f"{total_sum} → {second_step} → {final_num}"
         else:
-             process_str = f"{total_sum} → {final_num}"
+            process_str = f"{total_sum} → {final_num}"
 
     return final_num, total_sum, process_str
 
 # =========================
-# 生命靈數：流年計算
+# 生命靈數：流年計算（修正版）
 # =========================
-def life_year_number_for_year(birthday: datetime.date, query_year: int) -> tuple[int, int]:
-    before_total = (query_year - 1) + birthday.month + birthday.day
-    after_total  = (query_year)     + birthday.month + birthday.day
-    return reduce_to_digit(sum_once(before_total)), reduce_to_digit(sum_once(after_total))
+def life_year_number_for_year(birthday: datetime.date, query_year: int) -> tuple:
+    """
+    計算指定年份的生日前後兩個流年數。
+    修正：以字串逐位相加，與流日月曆的計算邏輯一致。
+    例：query_year=2026, 生日4/25
+      生日前：2025/04/25 → "20250425" → 2+0+2+5+0+4+2+5 = 20 → 2
+      生日後：2026/04/25 → "20260425" → 2+0+2+6+0+4+2+5 = 21 → 3
+    """
+    before_str = f"{query_year - 1}{birthday.month:02}{birthday.day:02}"
+    after_str  = f"{query_year}{birthday.month:02}{birthday.day:02}"
+    before_total = sum(int(x) for x in before_str)
+    after_total  = sum(int(x) for x in after_str)
+    return reduce_to_digit(before_total), reduce_to_digit(after_total)
 
 def life_year_number_for_date(birthday: datetime.date, query_date: datetime.date) -> int:
+    """
+    依查詢日期判斷當前所在流年。
+    修正：以字串逐位相加，與流日月曆的計算邏輯一致。
+    例：生日 4/25，查詢日 2026/3/31 → 尚未過生日 → 使用 2025
+        → "20250425" → 2+0+2+5+0+4+2+5 = 20 → reduce → 2
+    """
     cutoff = datetime.date(query_date.year, birthday.month, birthday.day)
     base_year = query_date.year - 1 if query_date < cutoff else query_date.year
-    total = base_year + birthday.month + birthday.day
-    return reduce_to_digit(sum_once(total))
+    total_str = f"{base_year}{birthday.month:02}{birthday.day:02}"
+    total = sum(int(x) for x in total_str)
+    return reduce_to_digit(total)
 
 # =========================
 # 流年解說
 # =========================
 def get_year_advice(n: int):
     advice = {
-        1: ("自主與突破之年 (Year of Autonomy & Breakthrough)", 
+        1: ("自主與突破之年 (Year of Autonomy & Breakthrough)",
             "容易衝動、單打獨鬥 (Impulsive, fighting alone)",
-            "設定清晰目標；在決策前先蒐集意見、給自己緩衝時間。", 
+            "設定清晰目標；在決策前先蒐集意見、給自己緩衝時間。",
             "⭐⭐⭐⭐"),
-        2: ("協作與關係之年 (Year of Collaboration & Relationships)", 
+        2: ("協作與關係之年 (Year of Collaboration & Relationships)",
             "過度迎合、忽略自我 (Over-accommodating, ignoring self)",
-            "練習明確表達需求、建立健康邊界；耐心溝通。", 
+            "練習明確表達需求、建立健康邊界；耐心溝通。",
             "⭐⭐⭐"),
-        3: ("創意與表達之年 (Year of Creativity & Expression)", 
+        3: ("創意與表達之年 (Year of Creativity & Expression)",
             "分心、情緒起伏 (Distracted, emotional fluctuations)",
-            "為創作與學習預留固定時段；公開練習表達。", 
+            "為創作與學習預留固定時段；公開練習表達。",
             "⭐⭐⭐⭐"),
-        4: ("穩定與基礎之年 (Year of Stability & Foundation)", 
+        4: ("穩定與基礎之年 (Year of Stability & Foundation)",
             "壓力感、僵化完美主義 (Stress, rigid perfectionism)",
-            "用『可持續的小步驟』築基礎；為計畫預留彈性。", 
+            "用『可持續的小步驟』築基礎；為計畫預留彈性。",
             "⭐⭐⭐"),
-        5: ("變動與自由之年 (Year of Change & Freedom)", 
+        5: ("變動與自由之年 (Year of Change & Freedom)",
             "焦躁、衝動決策 (Restless, impulsive decisions)",
-            "先設安全網再突破；用短衝 (sprint) 測試新方向。", 
+            "先設安全網再突破；用短衝 (sprint) 測試新方向。",
             "⭐⭐⭐⭐"),
-        6: ("關懷與責任之年 (Year of Care & Responsibility)", 
+        6: ("關懷與責任之年 (Year of Care & Responsibility)",
             "過度承擔、忽略自我 (Over-burdened, self-neglect)",
-            "把『照顧自己』寫進行程；清楚承諾與界線。", 
+            "把『照顧自己』寫進行程；清楚承諾與界線。",
             "⭐⭐⭐"),
-        7: ("內省與學習之年 (Year of Introspection & Learning)", 
+        7: ("內省與學習之年 (Year of Introspection & Learning)",
             "孤立、鑽牛角尖 (Isolation, overthinking)",
-            "安排獨處＋定期對談；用寫作/冥想整理解讀。", 
+            "安排獨處＋定期對談；用寫作/冥想整理解讀。",
             "⭐⭐⭐"),
-        8: ("事業與財務之年 (Year of Career & Finance)", 
+        8: ("事業與財務之年 (Year of Career & Finance)",
             "過度追求成就、忽略健康情感 (Over-achieving, ignoring health/emotions)",
-            "設定績效與復原節奏並行；學會授權與談判。", 
+            "設定績效與復原節奏並行；學會授權與談判。",
             "⭐⭐⭐⭐"),
-        9: ("收尾與釋放之年 (Year of Completion & Release)", 
+        9: ("收尾與釋放之年 (Year of Completion & Release)",
             "抗拒結束、情緒回顧 (Resisting endings, emotional nostalgia)",
-            "用感恩做結案；做斷捨離，替新循環清出空間。", 
+            "用感恩做結案；做斷捨離，替新循環清出空間。",
             "⭐⭐⭐"),
     }
     return advice.get(n, ("年度主題 (Theme)", "—", "—", "⭐⭐⭐"))
@@ -246,19 +259,19 @@ def get_flowing_day_guidance(flowing_day_str: str) -> str:
 
 def get_flowing_day_star(flowing_day_str: str) -> str:
     star_map = {
-        "11/2":"🌟🌟","12/3":"🌟🌟🌟🌟","13/4":"🌟🌟🌟🌟","14/5":"🌟🌟",
-        "15/6":"🌟🌟🌟🌟","16/7":"🌟🌟🌟","17/8":"🌟🌟🌟🌟🌟","18/9":"🌟🌟",
-        "19/10/1":"🌟🌟🌟🌟","20/2":"🌟🌟🌟","21/3":"🌟🌟🌟🌟","22/4":"🌟🌟🌟",
-        "23/5":"🌟🌟🌟🌟","24/6":"🌟🌟🌟","25/7":"🌟🌟","26/8":"🌟🌟🌟🌟🌟",
-        "27/9":"🌟🌟🌟","28/10/1":"🌟🌟🌟🌟🌟","29/11/2":"🌟🌟🌟","30/3":"🌟🌟🌟🌟",
-        "31/4":"🌟🌟🌟🌟","32/5":"🌟🌟🌟🌟","33/6":"🌟🌟🌟","34/7":"🌟🌟",
-        "35/8":"🌟🌟🌟🌟🌟","36/9":"🌟🌟🌟🌟","37/10/1":"🌟🌟🌟🌟🌟","38/11/2":"🌟🌟🌟",
-        "39/12/3":"🌟🌟🌟🌟","40/4":"🌟🌟🌟","41/5":"🌟🌟🌟🌟","42/6":"🌟🌟🌟",
-        "43/7":"🌟🌟🌟","44/8":"🌟🌟🌟🌟","45/9":"🌟🌟🌟","46/10/1":"🌟🌟🌟🌟",
-        "47/11/2":"🌟🌟🌟","48/12/3":"🌟🌟🌟🌟","49/13/4":"🌟🌟🌟","50/5":"🌟🌟🌟🌟",
-        "51/6":"🌟🌟","52/7":"🌟🌟🌟","53/8":"🌟🌟🌟🌟","54/9":"🌟🌟",
-        "55/10/1":"🌟🌟🌟","56/11/2":"🌟🌟","57/12/3":"🌟🌟🌟🌟","58/13/4":"🌟🌟🌟",
-        "59/14/5":"🌟🌟🌟🌟🌟"
+        "11/2": "🌟🌟", "12/3": "🌟🌟🌟🌟", "13/4": "🌟🌟🌟🌟", "14/5": "🌟🌟",
+        "15/6": "🌟🌟🌟🌟", "16/7": "🌟🌟🌟", "17/8": "🌟🌟🌟🌟🌟", "18/9": "🌟🌟",
+        "19/10/1": "🌟🌟🌟🌟", "20/2": "🌟🌟🌟", "21/3": "🌟🌟🌟🌟", "22/4": "🌟🌟🌟",
+        "23/5": "🌟🌟🌟🌟", "24/6": "🌟🌟🌟", "25/7": "🌟🌟", "26/8": "🌟🌟🌟🌟🌟",
+        "27/9": "🌟🌟🌟", "28/10/1": "🌟🌟🌟🌟🌟", "29/11/2": "🌟🌟🌟", "30/3": "🌟🌟🌟🌟",
+        "31/4": "🌟🌟🌟🌟", "32/5": "🌟🌟🌟🌟", "33/6": "🌟🌟🌟", "34/7": "🌟🌟",
+        "35/8": "🌟🌟🌟🌟🌟", "36/9": "🌟🌟🌟🌟", "37/10/1": "🌟🌟🌟🌟🌟", "38/11/2": "🌟🌟🌟",
+        "39/12/3": "🌟🌟🌟🌟", "40/4": "🌟🌟🌟", "41/5": "🌟🌟🌟🌟", "42/6": "🌟🌟🌟",
+        "43/7": "🌟🌟🌟", "44/8": "🌟🌟🌟🌟", "45/9": "🌟🌟🌟", "46/10/1": "🌟🌟🌟🌟",
+        "47/11/2": "🌟🌟🌟", "48/12/3": "🌟🌟🌟🌟", "49/13/4": "🌟🌟🌟", "50/5": "🌟🌟🌟🌟",
+        "51/6": "🌟🌟", "52/7": "🌟🌟🌟", "53/8": "🌟🌟🌟🌟", "54/9": "🌟🌟",
+        "55/10/1": "🌟🌟🌟", "56/11/2": "🌟🌟", "57/12/3": "🌟🌟🌟🌟", "58/13/4": "🌟🌟🌟",
+        "59/14/5": "🌟🌟🌟🌟🌟"
     }
     return star_map.get(flowing_day_str, "🌟🌟🌟")
 
@@ -312,12 +325,12 @@ st.markdown("在數字之中，我們與自己不期而遇。\n(In numbers, we m
 st.subheader("🌟 生命靈數 & 流年速算 (Life Path & Yearly Flow)")
 col1, col2 = st.columns([1.2, 1.2])
 with col1:
-    birthday = st.date_input("請輸入生日 (Birthday)", 
+    birthday = st.date_input("請輸入生日 (Birthday)",
                              value=datetime.date(1990, 1, 1),
                              min_value=datetime.date(1900, 1, 1),
                              max_value=datetime.date(2100, 12, 31))
 with col2:
-    ref_date = st.date_input("查詢日期 (Query Date)", 
+    ref_date = st.date_input("查詢日期 (Query Date)",
                              value=datetime.date(datetime.datetime.now().year, 12, 31),
                              min_value=datetime.date(1900, 1, 1),
                              max_value=datetime.date(2100, 12, 31))
@@ -331,7 +344,7 @@ if st.button("計算靈數與流年 (Calculate)"):
     st.caption(f"計算公式 (Formula)：將西元生日數字全部加總 ({birthday.strftime('%Y/%m/%d')})")
     st.text(f"計算過程 (Calculation)：{life_sum} → {life_process}")
     if lucky_life:
-         st.info(f"✨ **幸運色 (Color)**：{lucky_life.get('色')} ｜ **水晶 (Crystal)**：{lucky_life.get('水晶')} ｜ **小物 (Item)**：{lucky_life.get('小物')}")
+        st.info(f"✨ **幸運色 (Color)**：{lucky_life.get('色')} ｜ **水晶 (Crystal)**：{lucky_life.get('水晶')} ｜ **小物 (Item)**：{lucky_life.get('小物')}")
     st.markdown("---")
     today_n = life_year_number_for_date(birthday, ref_date)
     before_n, after_n = life_year_number_for_year(birthday, ref_date.year)
@@ -342,12 +355,26 @@ if st.button("計算靈數與流年 (Calculate)"):
     title, challenge, action, stars = get_year_advice(today_n)
     lucky_year = lucky_map.get(today_n, {})
     st.markdown("#### 🪄 流年解說 (Guidance for the Year)")
-    st.markdown(f"**主題 (Theme)**：{title} \n**運勢指數 (Stars)**：{stars} \n**挑戰 (Challenge)**：{challenge} \n**建議行動 (Action)**：{action} \n\n**幸運顏色 (Color)**：{lucky_year.get('色','')} \n**建議水晶 (Crystal)**：{lucky_year.get('水晶','')}")
+    st.markdown(
+        f"**主題 (Theme)**：{title} \n"
+        f"**運勢指數 (Stars)**：{stars} \n"
+        f"**挑戰 (Challenge)**：{challenge} \n"
+        f"**建議行動 (Action)**：{action} \n\n"
+        f"**幸運顏色 (Color)**：{lucky_year.get('色', '')} \n"
+        f"**建議水晶 (Crystal)**：{lucky_year.get('水晶', '')}"
+    )
     with st.expander("查看「今年生日前／生日當天起」兩階段的解讀 (View detailed breakdown)"):
         for label_ch, label_en, num in [("今年生日前", "Before Birthday", before_n), ("生日當天起", "After Birthday", after_n)]:
             t, c, a, s = get_year_advice(num)
             lk = lucky_map.get(num, {})
-            st.markdown(f"**{label_ch} ({label_en}) → 流年數 {num}** • 主題 (Theme)：{t} \n• ⭐：{s} \n• 挑戰 (Challenge)：{c} \n• 建議 (Advice)：{a} \n• 幸運色 / 水晶 (Color/Crystal)：{lk.get('色','')} / {lk.get('水晶','')}")
+            st.markdown(
+                f"**{label_ch} ({label_en}) → 流年數 {num}** \n"
+                f"• 主題 (Theme)：{t} \n"
+                f"• ⭐：{s} \n"
+                f"• 挑戰 (Challenge)：{c} \n"
+                f"• 建議 (Advice)：{a} \n"
+                f"• 幸運色 / 水晶 (Color/Crystal)：{lk.get('色', '')} / {lk.get('水晶', '')}"
+            )
 
 # -------- 區塊 B：流年月曆產生器 --------
 st.subheader("📅 產生 1 個月份的『流年月曆』建議表 (Generate Monthly Calendar)")
@@ -390,7 +417,6 @@ if st.button("🎉 產生日曆建議表 (Generate Excel)"):
     if not df.empty:
         output = style_excel(df)
         st.markdown(f"### 樂覺製所生命靈數")
-        # 下載按鈕加上回呼函式來計算下載次數
         st.download_button(
             label="📥 點此下載 Excel (Download)",
             data=output.getvalue(),
@@ -406,30 +432,27 @@ if st.button("🎉 產生日曆建議表 (Generate Excel)"):
 # 後台管理區 (側邊欄)
 # =========================
 st.sidebar.markdown("---")
-# 修改標題，只保留中文
 st.sidebar.subheader("🔒 管理員專區")
 
-# 恢復密碼輸入框
 admin_password = st.sidebar.text_input("輸入密碼", type="password")
 
-if admin_password == "admin123":  # 預設密碼
+if admin_password == "admin123":
     st.sidebar.success("已登入")
     stats_df = get_download_stats()
     visits_df = get_visit_stats()
-    
-    # 顯示兩個指標：總瀏覽次數 & 總下載次數
+
     col_a, col_b = st.sidebar.columns(2)
     with col_a:
         st.sidebar.metric("👀 總瀏覽", len(visits_df))
     with col_b:
         st.sidebar.metric("📥 總下載", len(stats_df))
-    
+
     st.sidebar.write("---")
-    
+
     if not visits_df.empty:
-         with st.sidebar.expander("查看瀏覽紀錄 (Visits)"):
+        with st.sidebar.expander("查看瀏覽紀錄 (Visits)"):
             st.dataframe(visits_df)
-            
+
     if not stats_df.empty:
         with st.sidebar.expander("查看下載紀錄 (Downloads)"):
             st.dataframe(stats_df)
