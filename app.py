@@ -66,21 +66,33 @@ if 'has_visited' not in st.session_state:
 # 公用數字處理
 # =========================
 def reduce_to_digit(n):
+    """反覆位數相加直到一位數"""
     while n > 9:
         n = sum(int(x) for x in str(n))
     return n
 
 def sum_once(n):
+    """只做一次位數相加"""
     return sum(int(x) for x in str(n))
 
 def format_layers(total):
+    """輸出三段式（或二段式）顯示"""
     mid = sum_once(total)
     return f"{total}/{mid}/{reduce_to_digit(mid)}" if mid > 9 else f"{total}/{mid}"
+
+def digits_sum(s):
+    """將字串中每個數字字元逐一相加"""
+    return sum(int(c) for c in s)
 
 # =========================
 # 生命靈數主命數計算
 # =========================
 def calculate_life_path_number(birthday):
+    """
+    計算生命靈數主命數
+    將西元生日每個數字逐一相加，直到一位數
+    例：1997/04/25 -> 1+9+9+7+0+4+2+5=37 -> 3+7=10 -> 1+0=1
+    """
     date_str = birthday.strftime("%Y%m%d")
     total_sum = sum(int(char) for char in date_str)
     final_num = reduce_to_digit(total_sum)
@@ -97,18 +109,68 @@ def calculate_life_path_number(birthday):
     return final_num, total_sum, process_str
 
 # =========================
+# 五階段數計算
+# =========================
+def calculate_five_stages(birthday, birth_hour, birth_minute):
+    """
+    計算五階段秘數。
+    以例子 1971/03/24 10:05 說明：
+      第一階段（老年 61+）：年      → 1+9+7+1 = 18/9
+      第二階段（中年 41-60）：年+月  → 1+9+7+1+0+3 = 21/3
+      第三階段（青年 21-40）：年+月+日 → 1+9+7+1+0+3+2+4 = 27/9
+      第四階段（少年 11-20）：年+月+日+時 → 1+9+7+1+0+3+2+4+1+0 = 28/10/1
+      第五階段（幼年 0-10）：年+月+日+時+分 → 1+9+7+1+0+3+2+4+1+0+0+5 = 33/6
+    """
+    y = f"{birthday.year:04d}"
+    m = f"{birthday.month:02d}"
+    d = f"{birthday.day:02d}"
+    h = f"{birth_hour:02d}"
+    mi = f"{birth_minute:02d}"
+
+    # 逐步累加數字字串
+    s1 = y
+    s2 = y + m
+    s3 = y + m + d
+    s4 = y + m + d + h
+    s5 = y + m + d + h + mi
+
+    def calc(s):
+        total = digits_sum(s)
+        return format_layers(total), reduce_to_digit(total), total
+
+    stage1_fmt, stage1_num, stage1_total = calc(s1)
+    stage2_fmt, stage2_num, stage2_total = calc(s2)
+    stage3_fmt, stage3_num, stage3_total = calc(s3)
+    stage4_fmt, stage4_num, stage4_total = calc(s4)
+    stage5_fmt, stage5_num, stage5_total = calc(s5)
+
+    return [
+        {"label": "第一階段", "label_en": "Stage 1 – Elder (61+)",
+         "fmt": stage1_fmt, "num": stage1_num,
+         "desc": "老年階段秘數，代表年齡 61 歲以後"},
+        {"label": "第二階段", "label_en": "Stage 2 – Middle Age (41–60)",
+         "fmt": stage2_fmt, "num": stage2_num,
+         "desc": "中年階段秘數，代表年齡 41－60 歲"},
+        {"label": "第三階段", "label_en": "Stage 3 – Young Adult (21–40)",
+         "fmt": stage3_fmt, "num": stage3_num,
+         "desc": "青年階段秘數，代表年齡 21－40 歲"},
+        {"label": "第四階段", "label_en": "Stage 4 – Adolescent (11–20)",
+         "fmt": stage4_fmt, "num": stage4_num,
+         "desc": "少年階段秘數，代表年齡 11－20 歲"},
+        {"label": "第五階段", "label_en": "Stage 5 – Childhood (0–10)",
+         "fmt": stage5_fmt, "num": stage5_num,
+         "desc": "幼年階段秘數，代表年齡 0－10 歲"},
+    ]
+
+# =========================
 # 流年計算（修正版）
-# ✅ 修正重點：
-#   1. 用字串逐位相加，不用數字直接加總
-#   2. 流年週期以生日當天為起點：
-#      查詢日 >= 今年生日 → 流年年份 = 今年
-#      查詢日 <  今年生日 → 流年年份 = 去年
-#
-# 範例：生日 1997/4/25，查詢日 2026/4/1
-#   → 2026/4/1 < 2026/4/25 → 流年年份 = 2025
-#   → "20250425" → 2+0+2+5+0+4+2+5 = 20 → 2+0 = 2 ✅
 # =========================
 def get_current_flow_year_base(birthday, query_date):
+    """
+    依查詢日期判斷目前所在的流年週期年份。
+      查詢日 >= 今年生日 → 流年年份 = 今年
+      查詢日 <  今年生日 → 流年年份 = 去年
+    """
     cutoff = datetime.date(query_date.year, birthday.month, birthday.day)
     return query_date.year if query_date >= cutoff else query_date.year - 1
 
@@ -120,8 +182,10 @@ def life_year_number_for_date(birthday, query_date):
 def life_year_numbers_current_and_next(birthday, query_date):
     base_year = get_current_flow_year_base(birthday, query_date)
     next_year = base_year + 1
-    current_num = reduce_to_digit(sum(int(x) for x in f"{base_year}{birthday.month:02}{birthday.day:02}"))
-    next_num    = reduce_to_digit(sum(int(x) for x in f"{next_year}{birthday.month:02}{birthday.day:02}"))
+    current_str = f"{base_year}{birthday.month:02}{birthday.day:02}"
+    next_str    = f"{next_year}{birthday.month:02}{birthday.day:02}"
+    current_num = reduce_to_digit(sum(int(x) for x in current_str))
+    next_num    = reduce_to_digit(sum(int(x) for x in next_str))
     return current_num, next_num, base_year
 
 # =========================
@@ -312,8 +376,11 @@ st.markdown(
     "**Be true, be you — 讓靈魂，自在呼吸。(Let the soul breathe freely.)**"
 )
 
-# -------- 區塊 A：流年速算 --------
+# ======================================================
+# 區塊 A：生日 + 出生時間輸入
+# ======================================================
 st.subheader("🌟 生命靈數 & 流年速算 (Life Path & Yearly Flow)")
+
 col1, col2 = st.columns([1.2, 1.2])
 with col1:
     birthday = st.date_input(
@@ -323,7 +390,7 @@ with col1:
         max_value=datetime.date(2100, 12, 31)
     )
 with col2:
-    # ✅ 預設值 = 今天
+    # ✅ 預設值改為今天
     ref_date = st.date_input(
         "查詢日期 (Query Date)",
         value=datetime.date.today(),
@@ -331,7 +398,17 @@ with col2:
         max_value=datetime.date(2100, 12, 31)
     )
 
+# 出生時間（用於五階段數）
+st.markdown("**出生時間 (Birth Time)** — 用於五階段數計算，24小時制 (24-hour format, for 5-stage calculation)")
+tc1, tc2 = st.columns(2)
+with tc1:
+    birth_hour = st.number_input("時 (Hour, 0–23)", min_value=0, max_value=23, value=0, step=1)
+with tc2:
+    birth_minute = st.number_input("分 (Minute, 0–59)", min_value=0, max_value=59, value=0, step=1)
+
 if st.button("計算靈數與流年 (Calculate)"):
+
+    # ── 主命數 ──
     life_num, life_sum, life_process = calculate_life_path_number(birthday)
     lucky_life = lucky_map.get(life_num, {})
 
@@ -347,8 +424,50 @@ if st.button("計算靈數與流年 (Calculate)"):
             f"**小物 (Item)**：{lucky_life.get('小物')}"
         )
 
+    # ── 五階段數 ──
     st.markdown("---")
+    st.subheader("🔢 五階段秘數 (Five-Stage Numbers)")
+    st.caption(
+        f"依據：{birthday.strftime('%Y/%m/%d')} "
+        f"{birth_hour:02d}:{birth_minute:02d}"
+    )
 
+    stages = calculate_five_stages(birthday, birth_hour, birth_minute)
+
+    # 用表格方式呈現五階段
+    stage_labels = ["第一階段\n(老年 61+)", "第二階段\n(中年 41–60)",
+                    "第三階段\n(青年 21–40)", "第四階段\n(少年 11–20)",
+                    "第五階段\n(幼年 0–10)"]
+    cols = st.columns(5)
+    for i, (col, stage) in enumerate(zip(cols, stages)):
+        with col:
+            st.metric(
+                label=f"{'①②③④⑤'[i]} {stage['label']}",
+                value=stage['num'],
+                delta=stage['fmt'],
+                delta_color="off"
+            )
+            lk = lucky_map.get(stage['num'], {})
+            st.caption(stage['desc'])
+            if lk:
+                st.caption(f"幸運色：{lk.get('色','')}")
+
+    with st.expander("查看五階段詳細計算過程 (Calculation details)"):
+        y = f"{birthday.year:04d}"
+        m = f"{birthday.month:02d}"
+        d = f"{birthday.day:02d}"
+        h = f"{birth_hour:02d}"
+        mi = f"{birth_minute:02d}"
+        st.markdown(
+            f"**第一階段**（年）：{'+'.join(y)} = **{stages[0]['fmt']}**  \n"
+            f"**第二階段**（年+月）：{'+'.join(y+m)} = **{stages[1]['fmt']}**  \n"
+            f"**第三階段**（年+月+日）：{'+'.join(y+m+d)} = **{stages[2]['fmt']}**  \n"
+            f"**第四階段**（年+月+日+時）：{'+'.join(y+m+d+h)} = **{stages[3]['fmt']}**  \n"
+            f"**第五階段**（年+月+日+時+分）：{'+'.join(y+m+d+h+mi)} = **{stages[4]['fmt']}**"
+        )
+
+    # ── 流年 ──
+    st.markdown("---")
     today_n = life_year_number_for_date(birthday, ref_date)
     current_n, next_n, base_year = life_year_numbers_current_and_next(birthday, ref_date)
     next_year = base_year + 1
@@ -394,7 +513,9 @@ if st.button("計算靈數與流年 (Calculate)"):
                 f"• 幸運色 / 水晶 (Color/Crystal)：{lk.get('色', '')} / {lk.get('水晶', '')}"
             )
 
-# -------- 區塊 B：流年月曆產生器 --------
+# ======================================================
+# 區塊 B：流年月曆產生器
+# ======================================================
 st.subheader("📅 產生 1 個月份的『流年月曆』建議表 (Generate Monthly Calendar)")
 target_month = st.selectbox(
     "請選擇月份 (Select Month)",
