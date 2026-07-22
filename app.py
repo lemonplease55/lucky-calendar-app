@@ -94,6 +94,8 @@ def current_stage(age):
         return "青年階段", "21～40歲", 3
     if age >= 11:
         return "少年階段", "11～20歲", 4
+    if age == 10:
+        return "幼年轉少年階段", "目前10歲，滿11歲後進入少年階段", 5
     return "幼年階段", "0～10歲", 5
 
 def calc_current_stage_number(birthday, stage_part_count, birth_time=None):
